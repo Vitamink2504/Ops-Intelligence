@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OPS INTELLIGENCE</title>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--deep:#0B3C5D;--deep2:#082C45;--sky:#5FB4E5;--skyl:#E3F2FB;--bg:#F5F7F9;--ink:#262B30;--mute:#6A737C;--line:#E2E7EB;--bad:#B8322F;--ok:#1E8E5A}
+*{box-sizing:border-box;margin:0}body{font-family:Figtree,system-ui,sans-serif;background:var(--bg);color:var(--ink);font-size:15px;line-height:1.5}
+button,input,select,textarea{font:inherit;color:inherit}:focus-visible{outline:2px solid var(--sky);outline-offset:2px}
+h1{font-size:1.45rem}h2{font-size:1.05rem;margin-bottom:8px}.mute{color:var(--mute);font-size:.88rem}
+.center{min-height:100vh;display:grid;place-items:center;padding:18px;background:linear-gradient(160deg,var(--deep2),var(--deep))}
+.box{background:#fff;border-radius:14px;padding:28px;width:100%;max-width:420px}.brand{font-weight:700;letter-spacing:.04em;color:var(--deep)}
+.shell{display:grid;grid-template-columns:220px 1fr;min-height:100vh}
+.side{background:var(--deep);color:#DCEBF5;padding:18px 10px;display:flex;flex-direction:column;gap:3px;position:sticky;top:0;height:100vh}
+.side .brand{color:#fff;padding:0 10px 14px}.nav{background:none;border:0;color:inherit;text-align:left;padding:9px 12px;border-radius:8px;cursor:pointer;width:100%}
+.nav.on{background:var(--sky);color:var(--deep2);font-weight:600}.who{margin-top:auto;padding:10px;font-size:.85rem;border-top:1px solid rgba(255,255,255,.15)}
+main{padding:26px;max-width:1000px;width:100%}.top{margin-bottom:18px}
+.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:18px;margin-bottom:16px}
+.form{display:grid;gap:14px}.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+label{display:grid;gap:4px;font-weight:500;font-size:.9rem}
+input,select,textarea{border:1px solid #C9D2D9;border-radius:8px;padding:10px;background:#fff;width:100%}textarea{min-height:70px}
+.btn{background:var(--deep);color:#fff;border:0;border-radius:8px;padding:10px 18px;cursor:pointer;font-weight:600}
+.btn.alt{background:#fff;color:var(--deep);border:1px solid var(--deep)}.btn.sm{padding:4px 10px;font-size:.8rem}
+.tabs{display:flex;gap:8px;margin-bottom:14px}.tabs button{flex:1}
+.tw{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:.9rem}th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--mute);font-weight:500;font-size:.82rem}
+.tag{display:inline-block;padding:2px 9px;border-radius:20px;font-size:.78rem;background:var(--skyl);color:var(--deep)}
+.note{background:var(--skyl);border-left:4px solid var(--sky);padding:10px 12px;border-radius:6px;font-size:.88rem}
+.msg{font-size:.88rem;margin-top:8px}.err{color:var(--bad)}.ok{color:var(--ok)}
+.kpi{display:grid;grid-template-columns:1fr 110px;gap:10px;align-items:end}
+@media(max-width:820px){.shell{grid-template-columns:1fr}.side{position:static;height:auto;flex-direction:row;flex-wrap:wrap}.side .brand,.who{width:100%}.nav{width:auto}main{padding:16px 12px}}
+</style></head><body><div id="app"></div>
+<script type="module">
+import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {getAuth,createUserWithEmailAndPassword,signInWithEmailAndPassword,signOut,onAuthStateChanged} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {getFirestore,doc,getDoc,setDoc,addDoc,collection,query,where,limit,getDocs,updateDoc,deleteDoc,writeBatch} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+/* >>> PASTE YOUR FIREBASE WEB CONFIG HERE (Project settings > Your apps > Web app) <<< */
+const firebaseConfig={apiKey:"AIzaSyAzMQUmng5Ff69GXuIhLXizheWC4kgnL30",authDomain:"ops-intelligence-c5370.firebaseapp.com",projectId:"ops-intelligence-c5370",appId:"1:816999636452:web:04ccffd56fcb21e8d93bf1"};
+
+const DEPTS=['Kitchen','Inventory','Bar','Front of House','Housekeeping','Administration'];
+const MGR=['admin','ops_manager','dept_manager','hr'];
+const app=initializeApp(firebaseConfig),auth=getAuth(app),db=getFirestore(app);
+let me=null,page='',authTab='login';
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const $=s=>document.querySelector(s),today=new Date().toISOString().slice(0,10);
+const isMgr=()=>me&&MGR.includes(me.role),senior=()=>me&&['admin','ops_manager'].includes(me.role);
+const say=(t,bad)=>{const e=$('#msg');if(e){e.className='msg '+(bad?'err':'ok');e.textContent=t}};
+const rows=async q=>(await getDocs(q)).docs.map(d=>({id:d.id,...d.data()}));
+
+onAuthStateChanged(auth,async u=>{
+  me=null;
+  if(u){const s=await getDoc(doc(db,'users',u.uid));if(s.exists()&&s.data().active)me={uid:u.uid,...s.data()};page=me?(isMgr()?'team':'role'):''}
+  draw();
+});
+window.go=p=>{page=p;draw()};
+window.out=()=>signOut(auth);
+
+function draw(){
+  const a=$('#app');
+  if(firebaseConfig.apiKey==='PASTE'){a.innerHTML='<div class="center"><div class="box"><h1>Setup needed</h1><p class="mute">Open this file and paste your Firebase web config near the top of the script.</p></div></div>';return}
+  if(!me){authView();return}
+  const nav=isMgr()?[['team','Team reports'],['eval','KPI evaluation'],...(senior()?[['anon','Anonymous reports'],['kpis','SOPs and KPIs']]:[]),...(me.role==='admin'?[['staff','Staff and roles']]:[])]
+    :[['role','My SOPs and KPIs'],['report','Daily report'],['history','My history'],['anonnew','Anonymous report']];
+  a.innerHTML=`<div class="shell"><aside class="side"><div class="brand">OPS INTELLIGENCE</div>
+   ${nav.map(([k,l])=>`<button class="nav ${page===k?'on':''}" onclick="go('${k}')">${l}</button>`).join('')}
+   <div class="who">${esc(me.name)}<br><span style="opacity:.7">${esc(me.job)} · ${esc(me.role)}</span><br><button class="btn alt sm" style="margin-top:8px" onclick="out()">Sign out</button></div></aside><main id="view"></main></div>`;
+  ({role:roleView,report:reportView,history:histView,anonnew:anonNew,team:teamView,eval:evalView,anon:anonList,kpis:kpiAdmin,staff:staffView})[page]();
+}
+
+/* ---------- Auth ---------- */
+window.tab=t=>{authTab=t;draw()};
+function authView(){
+  const su=authTab==='signup';
+  $('#app').innerHTML=`<div class="center"><div class="box"><div class="brand">OPS INTELLIGENCE</div><h1 style="margin:14px 0 12px">${su?'Create your account':'Sign in'}</h1>
+  <div class="tabs"><button class="btn ${su?'alt':''}" onclick="tab('login')">Sign in</button><button class="btn ${su?'':'alt'}" onclick="tab('signup')">Sign up</button></div>
+  <form class="form" onsubmit="doAuth(event)">
+   ${su?`<label>Full name<input name="name" required maxlength="120"></label>
+   <div class="row"><label>Employee ID<input name="eid" required maxlength="40"></label>
+   <label>Department<select name="dept">${DEPTS.map(d=>`<option>${d}</option>`).join('')}</select></label></div>
+   <label>Job title<input name="job" required maxlength="80" list="jobs" placeholder="e.g. Line Cook"></label><datalist id="jobs"><option>Line Cook<option>Waiter<option>Bartender<option>Housekeeper<option>Operations Manager</datalist>`:''}
+   <label>Email<input type="email" name="email" required autocomplete="username"></label>
+   <label>Password<input type="password" name="pw" required minlength="8" autocomplete="${su?'new':'current'}-password"></label>
+   <button class="btn">${su?'Create account':'Sign in'}</button><div id="msg" class="msg"></div></form>
+   ${su?'<p class="mute" style="margin-top:10px">Everyone starts as an Employee. An admin assigns manager roles.</p>':''}</div></div>`;
+}
+window.doAuth=async e=>{
+  e.preventDefault();const f=Object.fromEntries(new FormData(e.target));say('Working...');
+  try{
+    if(authTab==='signup'){
+      const c=await createUserWithEmailAndPassword(auth,f.email,f.pw);
+      await setDoc(doc(db,'users',c.user.uid),{name:f.name.trim(),eid:f.eid.trim(),department:f.dept,job:f.job.trim(),role:'employee',active:true});
+      await signOut(auth);await signInWithEmailAndPassword(auth,f.email,f.pw);
+    }else await signInWithEmailAndPassword(auth,f.email,f.pw);
+  }catch(x){say(x.code==='auth/email-already-in-use'?'That email already has an account.':x.code?.startsWith('auth/')?'Check your email and password.':x.message,1)}
+};
+
+/* ---------- Employee ---------- */
+const myKpis=async()=>(await rows(collection(db,'kpis'))).filter(k=>k.job===me.job).sort((a,b)=>a.kind<b.kind?1:-1);
+async function roleView(){
+  const k=await myKpis(),sop=k.filter(x=>x.kind==='sop'),kp=k.filter(x=>x.kind==='kpi');
+  $('#view').innerHTML=`<div class="top"><h1>My SOPs and KPIs</h1><p class="mute">${esc(me.job)} · ${esc(me.department)}</p></div>
+  ${k.length?'':'<div class="note">No SOPs or KPIs are set for "'+esc(me.job)+'" yet. Ask your manager.</div>'}
+  <div class="card"><h2>Standard operating procedures</h2>${sop.map(s=>`<p><b>${esc(s.title)}</b><br><span class="mute">${esc(s.detail)}</span></p><br>`).join('')||'<p class="mute">None yet.</p>'}</div>
+  <div class="card tw"><h2>Key performance indicators</h2><table><tr><th>KPI</th><th>Target</th><th>What it measures</th></tr>
+  ${kp.map(s=>`<tr><td>${esc(s.title)}</td><td>${s.dir==='lower'?'at most ':''}${s.target} ${esc(s.unit)}</td><td>${esc(s.detail)}</td></tr>`).join('')}</table></div>
+  <button class="btn" onclick="go('report')">Fill today's report</button>`;
+}
+async function reportView(){
+  const kp=(await myKpis()).filter(x=>x.kind==='kpi');
+  $('#view').innerHTML=`<div class="top"><h1>Daily report</h1><p class="mute">Questions come from your KPIs.</p></div>
+  <form class="card form" onsubmit="sendReport(event)"><div class="row"><label>Date<input type="date" name="date" value="${today}" required></label>
+  <label>Shift<select name="shift"><option>AM</option><option>PM</option></select></label>
+  <label>Privacy<select name="mode"><option value="standard">Standard: name attached</option><option value="confidential">Confidential: hidden from supervisors</option></select></label></div>
+  <div class="note">Confidential reports can be identified only by the Admin and Operations Manager roles. Anonymous reports have their own page.</div>
+  ${kp.map(k=>`<div class="kpi"><label>${esc(k.title)}<span class="mute">${esc(k.detail)} (target ${k.dir==='lower'?'at most ':''}${k.target} ${esc(k.unit)})</span></label><input type="number" min="0" step="any" name="k_${k.id}" required aria-label="${esc(k.title)}"></div>`).join('')}
+  <label>What went well?<textarea name="well"></textarea></label><label>What went wrong?<textarea name="wrong" required></textarea></label>
+  <label>What needs management attention?<textarea name="attn"></textarea></label><label>Recommendations<textarea name="rec"></textarea></label>
+  <button class="btn">Submit report</button><div id="msg" class="msg"></div></form>`;
+}
+window.sendReport=async e=>{
+  e.preventDefault();const f=Object.fromEntries(new FormData(e.target)),ans={};
+  Object.keys(f).filter(k=>k.startsWith('k_')).forEach(k=>ans[k.slice(2)]=Number(f[k]));
+  try{await setDoc(doc(db,'reports',`${me.uid}_${f.date}_${f.shift}`),{uid:me.uid,name:me.name,job:me.job,dept:me.department,date:f.date,shift:f.shift,mode:f.mode,answers:ans,well:f.well,wrong:f.wrong,attn:f.attn,rec:f.rec,at:Date.now()});
+    say('Report submitted. Thank you.');e.target.reset()}
+  catch(x){say(x.code==='permission-denied'?'A report for this date and shift already exists, or you lack permission.':x.message,1)}
+};
+async function histView(){
+  const d=(await rows(query(collection(db,'reports'),where('uid','==',me.uid)))).sort((a,b)=>b.date.localeCompare(a.date));
+  $('#view').innerHTML=`<div class="top"><h1>My history</h1></div><div class="card tw"><table><tr><th>Date</th><th>Shift</th><th>Privacy</th><th>What went wrong</th></tr>
+  ${d.map(r=>`<tr><td>${r.date}</td><td>${r.shift}</td><td><span class="tag">${r.mode}</span></td><td>${esc(r.wrong)}</td></tr>`).join('')||'<tr><td colspan=4 class="mute">No reports yet.</td></tr>'}</table></div>`;
+}
+function anonNew(){
+  $('#view').innerHTML=`<div class="top"><h1>Anonymous report</h1></div><div class="note">Nothing in the report links it to your account: no name, ID or email is stored with it. You must be signed in to send it, and your timing or writing details may still hint at who you are, so absolute anonymity cannot be promised.</div><br>
+  <form class="card form" onsubmit="sendAnon(event)"><label>Department<select name="d">${DEPTS.map(d=>`<option>${d}</option>`).join('')}</select></label>
+  <label>Your report<textarea name="b" required minlength="5" maxlength="4000"></textarea></label><button class="btn">Send anonymously</button><div id="msg" class="msg"></div></form>`;
+}
+window.sendAnon=async e=>{
+  e.preventDefault();const f=Object.fromEntries(new FormData(e.target));
+  try{await addDoc(collection(db,'anon_reports'),{dept:f.d,body:f.b,at:Date.now()});say('Sent. Thank you.');e.target.reset()}catch(x){say(x.message,1)}
+};
+
+/* ---------- Management ---------- */
+function reportsQ(){
+  const c=collection(db,'reports');
+  if(senior())return query(c,limit(500));
+  if(me.role==='hr')return query(c,where('mode','==','standard'),limit(500));
+  return query(c,where('mode','==','standard'),where('dept','==',me.department),limit(500));
+}
+async function teamView(){
+  let d=[],err='';try{d=(await rows(reportsQ())).sort((a,b)=>b.date.localeCompare(a.date))}catch(x){err=x.message}
+  $('#view').innerHTML=`<div class="top"><h1>Team reports</h1><p class="mute">${me.role==='dept_manager'?'Standard reports from your department.':'All reports you are permitted to see.'}</p></div>
+  <input id="q" placeholder="Search text" oninput="filt()" style="max-width:260px;margin-bottom:12px" aria-label="Search"><div class="card tw"><table id="tb"><tr><th>Date</th><th>Employee</th><th>Privacy</th><th>Went wrong</th><th>Needs attention</th></tr>
+  ${err?`<tr><td colspan=5 class="err">${esc(err)}</td></tr>`:d.map(r=>`<tr><td>${r.date} ${r.shift}</td><td>${esc(r.name)}<br><span class="mute">${esc(r.job)}</span></td><td><span class="tag">${r.mode}</span></td><td>${esc(r.wrong)}</td><td>${esc(r.attn)}</td></tr>`).join('')}</table></div>`;
+}
+window.filt=()=>{const q=$('#q').value.toLowerCase();document.querySelectorAll('#tb tr:not(:first-child)').forEach(r=>r.hidden=!r.textContent.toLowerCase().includes(q))};
+function evalView(){
+  const d0=new Date(Date.now()-30*864e5).toISOString().slice(0,10);
+  $('#view').innerHTML=`<div class="top"><h1>KPI evaluation</h1><p class="mute">Average achievement against each person's KPI targets. Raising problems or confidential reports never lowers a score.</p></div>
+  <div class="row card"><label>From<input type="date" id="d1" value="${d0}"></label><label>To<input type="date" id="d2" value="${today}"></label><label>&nbsp;<button class="btn" onclick="runEval()">Run</button></label></div><div id="out"></div>`;runEval();
+}
+window.runEval=async()=>{
+  const [r,k]=await Promise.all([rows(reportsQ()),rows(collection(db,'kpis'))]);
+  const d1=$('#d1').value,d2=$('#d2').value,by={};
+  r.filter(x=>x.date>=d1&&x.date<=d2).forEach(x=>{(by[x.uid]??={n:x.name,j:x.job,reps:[]}).reps.push(x.answers)});
+  const out=Object.values(by).map(p=>{const cells=k.filter(x=>x.kind==='kpi'&&x.job===p.j).map(x=>{
+      const v=p.reps.map(a=>a[x.id]).filter(v=>v!=null);if(!v.length)return{t:x.title,s:null};
+      const avg=v.reduce((a,b)=>a+b,0)/v.length,s=x.dir==='lower'?(avg<=x.target?100:x.target/avg*100):(avg/x.target*100);return{t:x.title,s:Math.min(s,150)}}),sc=cells.filter(c=>c.s!=null);
+    return `<tr><td>${esc(p.n)}<br><span class="mute">${esc(p.j)}</span></td><td>${p.reps.length}</td><td>${cells.map(c=>`${esc(c.t)}: ${c.s==null?'no data':Math.round(c.s)+'%'}`).join('<br>')}</td><td><b>${sc.length?Math.round(sc.reduce((a,c)=>a+c.s,0)/sc.length)+'%':'-'}</b></td></tr>`}).join('');
+  $('#out').innerHTML=`<div class="card tw"><table><tr><th>Employee</th><th>Shifts</th><th>KPI achievement</th><th>Overall</th></tr>${out||'<tr><td colspan=4 class="mute">No reports in this period.</td></tr>'}</table></div>`;
+};
+async function anonList(){
+  const d=(await rows(collection(db,'anon_reports'))).sort((a,b)=>b.at-a.at);
+  $('#view').innerHTML=`<div class="top"><h1>Anonymous reports</h1></div><div class="card tw"><table><tr><th>Date</th><th>Department</th><th>Report</th></tr>${d.map(r=>`<tr><td>${new Date(r.at).toLocaleDateString()}</td><td>${esc(r.dept)}</td><td>${esc(r.body)}</td></tr>`).join('')||'<tr><td colspan=3 class="mute">None.</td></tr>'}</table></div>`;
+}
+const SAMPLE=[['Line Cook','sop','Station setup','Complete mise en place and station checks before service.'],['Line Cook','sop','Food safety','Log fridge temperatures; label and date all prep.'],
+['Line Cook','kpi','Orders completed','Tickets completed on your station',40,'orders','higher'],['Line Cook','kpi','Orders remade','Tickets remade for quality',2,'orders','lower'],['Line Cook','kpi','Food wastage','Waste logged this shift',1.5,'kg','lower'],
+['Waiter','sop','Order accuracy','Repeat orders back to the guest before sending.'],['Waiter','kpi','Tables served','Tables you served',12,'tables','higher'],['Waiter','kpi','Incorrect orders','Orders sent wrongly',1,'orders','lower'],
+['Bartender','sop','Pour control','Use jiggers and record complimentary drinks.'],['Bartender','kpi','Drinks sold','Drinks served this shift',80,'drinks','higher'],
+['Housekeeper','sop','Washroom checks','Inspect and sign off washrooms hourly.'],['Housekeeper','kpi','Cleaning tasks completed','Tasks done from the schedule',20,'tasks','higher'],
+['Operations Manager','sop','Daily review','Review all department reports before close.'],['Operations Manager','kpi','Reports reviewed','Department reports reviewed',20,'reports','higher']];
+async function kpiAdmin(){
+  const d=(await rows(collection(db,'kpis'))).sort((a,b)=>a.job.localeCompare(b.job));
+  $('#view').innerHTML=`<div class="top"><h1>SOPs and KPIs</h1></div>
+  ${d.length?'':'<div class="card"><p class="mute" style="margin-bottom:10px">No items yet.</p><button class="btn" onclick="seed()">Load sample SOPs and KPIs</button></div>'}
+  <form class="card form" onsubmit="addKpi(event)"><h2>Add item</h2><div class="row"><label>Job title<input name="j" required></label><label>Type<select name="k"><option value="sop">SOP</option><option value="kpi">KPI</option></select></label><label>Title<input name="t" required></label></div>
+  <label>Detail<textarea name="d"></textarea></label><div class="row"><label>Target (KPI)<input type="number" step="any" name="g"></label><label>Unit<input name="u"></label><label>Better when<select name="r"><option value="higher">Higher</option><option value="lower">Lower</option></select></label></div>
+  <button class="btn">Add</button><div id="msg" class="msg"></div></form>
+  <div class="card tw"><table><tr><th>Job</th><th>Type</th><th>Title</th><th>Target</th><th></th></tr>${d.map(r=>`<tr><td>${esc(r.job)}</td><td>${r.kind}</td><td>${esc(r.title)}</td><td>${r.target??''} ${esc(r.unit)}</td><td><button class="btn alt sm" onclick="delKpi('${r.id}')">Delete</button></td></tr>`).join('')}</table></div>`;
+}
+window.seed=async()=>{const b=writeBatch(db);SAMPLE.forEach(([job,kind,title,detail,target,unit,dir])=>b.set(doc(collection(db,'kpis')),{job,kind,title,detail,target:target??null,unit:unit??'',dir:dir??'higher'}));await b.commit();kpiAdmin()};
+window.addKpi=async e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.target));
+  try{await addDoc(collection(db,'kpis'),{job:f.j.trim(),kind:f.k,title:f.t,detail:f.d,target:f.g===''?null:Number(f.g),unit:f.u,dir:f.r});kpiAdmin()}catch(x){say(x.message,1)}};
+window.delKpi=async id=>{if(confirm('Delete this item?')){await deleteDoc(doc(db,'kpis',id));kpiAdmin()}};
+async function staffView(){
+  const d=(await rows(collection(db,'users'))).sort((a,b)=>a.name.localeCompare(b.name)),R=['employee','dept_manager','ops_manager','hr','admin'];
+  $('#view').innerHTML=`<div class="top"><h1>Staff and roles</h1><p class="mute">${d.length} accounts</p></div><div class="card tw"><table><tr><th>Name</th><th>ID</th><th>Department</th><th>Job</th><th>Role</th><th>Active</th></tr>
+  ${d.map(p=>`<tr><td>${esc(p.name)}</td><td>${esc(p.eid)}</td><td>${esc(p.department)}</td><td>${esc(p.job)}</td>
+  <td><select aria-label="Role for ${esc(p.name)}" onchange="setP('${p.id}',{role:this.value})">${R.map(r=>`<option ${r===p.role?'selected':''}>${r}</option>`).join('')}</select></td>
+  <td><input type="checkbox" style="width:auto" ${p.active?'checked':''} aria-label="Active" onchange="setP('${p.id}',{active:this.checked})"></td></tr>`).join('')}</table></div><div id="msg" class="msg"></div>`;
+}
+window.setP=async(id,patch)=>{
+  try{await updateDoc(doc(db,'users',id),patch);await addDoc(collection(db,'audit'),{actor:me.uid,action:'profile_update',detail:id+' '+JSON.stringify(patch),at:Date.now()});say('Saved')}
+  catch(x){say(x.message,1)}
+};
+</script></body></html>
