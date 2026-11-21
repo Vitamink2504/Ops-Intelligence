@@ -91,7 +91,8 @@ window.doAuth=async e=>{
       await setDoc(doc(db,'users',c.user.uid),{name:f.name.trim(),eid:f.eid.trim(),department:f.dept,job:f.job.trim(),role:'employee',active:true});
       await signOut(auth);await signInWithEmailAndPassword(auth,f.email,f.pw);
     }else await signInWithEmailAndPassword(auth,f.email,f.pw);
- }catch(x){say(x.code==='auth/email-already-in-use'?'That email already has an account.':(x.code||'')+' '+x.message,1)}
+  }catch(x){say(x.code==='auth/email-already-in-use'?'That email already has an account.':x.code?.startsWith('auth/')?'Check your email and password.':x.message,1)}
+};
 
 /* ---------- Employee ---------- */
 const myKpis=async()=>(await rows(collection(db,'kpis'))).filter(k=>k.job===me.job).sort((a,b)=>a.kind<b.kind?1:-1);
